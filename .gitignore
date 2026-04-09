@@ -1,0 +1,51 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Credentials and secrets
+*.pem
+*.key
+!*.pub
+.aws/
+secrets/
+
+# Unsanitized AWS audit snapshot — local only, never commit
+audit/*.full.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor swap files
+*.swp
+*~
+
+# IDE — PhpStorm / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE — VS Code workspace state
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Python (placeholder, no venv yet in this repo)
+__pycache__/
+*.pyc
+.venv/
