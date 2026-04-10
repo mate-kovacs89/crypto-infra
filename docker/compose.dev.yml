@@ -82,21 +82,21 @@ services:
   #     - ../../crypto-bot-node/src:/app/src
 
   # ---------------------------------------------------------------------------
-  # TODO Phase 5+: ai-inference (Python LightGBM gRPC server)
+  # Phase 5+: ai-inference (Python LightGBM gRPC server)
   # ---------------------------------------------------------------------------
-  # ai-inference:
-  #   build:
-  #     context: ../../crypto-ai-python
-  #     dockerfile: services/inference/Dockerfile
-  #   container_name: crypto-ai-inference
-  #   networks:
-  #     - crypto-net
-  #   ports:
-  #     - "127.0.0.1:50051:50051"
-  #   environment:
-  #     MODEL_S3_BUCKET: ""
-  #     MODEL_REFRESH_INTERVAL_SEC: "300"
-  #     LOG_LEVEL: debug
+  ai-inference:
+    build:
+      context: ../../crypto-ai-python
+      dockerfile: services/inference/Dockerfile
+    container_name: crypto-ai-inference
+    networks:
+      - crypto-net
+    ports:
+      - "127.0.0.1:50051:50051"
+    environment:
+      GRPC_PORT: "50051"
+      MODEL_REFRESH_INTERVAL_SEC: "300"
+      LOG_LEVEL: debug
 
   # ---------------------------------------------------------------------------
   # TODO Phase 11+: web-vue (Vue 3 + Vite dev server)
