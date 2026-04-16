@@ -22,7 +22,11 @@ resource "aws_db_instance" "main" {
   storage_type          = "gp3"
   storage_encrypted     = true
 
-  db_name  = "cryptobot_ai"
+  # The RDS "db_name" is the initial database created at launch —
+  # NOT the application schema. The actual schema is "cryptobot_ai"
+  # but the RDS was initially provisioned with db_name="cryptobot".
+  # Changing this forces replacement (destroy + create) — never do.
+  db_name  = "cryptobot"
   username = var.rds_username
   password = var.rds_password
 
@@ -34,8 +38,6 @@ resource "aws_db_instance" "main" {
   skip_final_snapshot = true
 
   backup_retention_period = 7
-  backup_window           = "03:00-04:00"
-  maintenance_window      = "sun:04:00-sun:05:00"
 
   tags = {
     Name        = "crypto-bot-rds"
@@ -44,6 +46,12 @@ resource "aws_db_instance" "main" {
   }
 
   lifecycle {
-    ignore_changes = [password]
+    ignore_changes = [
+      password,
+      backup_window,
+      maintenance_window,
+      engine_version,
+      max_allocated_storage,
+    ]
   }
 }
