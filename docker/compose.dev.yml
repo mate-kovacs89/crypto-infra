@@ -1,19 +1,10 @@
-# Local development compose file for the crypto-ai system.
+# Local development compose — ALL services running.
 #
-# Phase 0: only `mysql` is a real service. The bot-node, ai-inference and
-# web-vue services are commented out — uncomment as the corresponding repos
-# are bootstrapped:
-#   - bot-node      → Phase 2+ (Drizzle data layer + execution layer)
-#   - ai-inference  → Phase 5+ (Python LightGBM gRPC server)
-#   - web-vue       → Phase 11+ (Vue 3 + Vite dashboard)
-#
-# Run with:
+# Run:
 #   cd crypto-infra
-#   docker compose -f docker/compose.dev.yml up -d mysql
+#   docker compose -f docker/compose.dev.yml up -d
 #
-# All hardcoded passwords here are DEV-ONLY (port bound to 127.0.0.1, network
-# is private, schema is throwaway). Production secrets live in AWS SSM
-# Parameter Store and are pulled by the live deploy scripts.
+# All passwords are DEV-ONLY. Production uses RDS + SSM.
 
 name: crypto-ai-dev
 
@@ -34,7 +25,6 @@ services:
     networks:
       - crypto-net
     ports:
-      # Bind to 127.0.0.1 only — never expose dev mysql to the LAN.
       - "127.0.0.1:3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: dev_root_change_me
@@ -57,62 +47,73 @@ services:
       retries: 5
       start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # TODO Phase 2+: bot-node (TypeScript execution layer)
-  # ---------------------------------------------------------------------------
-  # bot-node:
-  #   build:
-  #     context: ../../crypto-bot-node
-  #     dockerfile: Dockerfile
-  #     target: dev
-  #   container_name: crypto-ai-bot-node
-  #   networks:
-  #     - crypto-net
-  #   ports:
-  #     - "127.0.0.1:3000:3000"
-  #   environment:
-  #     DATABASE_URL: mysql://cryptobot:dev_change_me@mysql:3306/cryptobot_ai
-  #     INFERENCE_GRPC_URL: ai-inference:50051
-  #     LOG_LEVEL: debug
-  #     PAPER_MODE: "true"
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   volumes:
-  #     - ../../crypto-bot-node/src:/app/src
-
-  # ---------------------------------------------------------------------------
-  # Phase 5+: ai-inference (Python LightGBM gRPC server)
-  # ---------------------------------------------------------------------------
   ai-inference:
     build:
       context: ../../crypto-ai-python
-      dockerfile: services/inference/Dockerfile
+      dockerfile: Dockerfile
+      target: inference
     container_name: crypto-ai-inference
+    restart: unless-stopped
     networks:
       - crypto-net
     ports:
       - "127.0.0.1:50051:50051"
     environment:
-      GRPC_PORT: "50051"
-      MODEL_REFRESH_INTERVAL_SEC: "300"
-      LOG_LEVEL: debug
+      MODEL_PATH: /app/models/model.lgbm
+    volumes:
+      - ../../crypto-ai-python/models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc;ch=grpc.insecure_channel('localhost:50051');grpc.channel_ready_future(ch).result(timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
-  # ---------------------------------------------------------------------------
-  # TODO Phase 11+: web-vue (Vue 3 + Vite dev server)
-  # ---------------------------------------------------------------------------
-  # web-vue:
-  #   build:
-  #     context: ../../crypto-web-vue
-  #     dockerfile: Dockerfile
-  #     target: dev
-  #   container_name: crypto-ai-web-vue
-  #   networks:
-  #     - crypto-net
-  #   ports:
-  #     - "127.0.0.1:5173:5173"
-  #   environment:
-  #     VITE_BOT_HTTP_URL: http://localhost:3000
-  #     VITE_BOT_WSS_URL: ws://localhost:3000/ws
-  #   depends_on:
-  #     - bot-node
+  bot-node:
+    build:
+      context: ../../crypto-bot-node
+      dockerfile: Dockerfile
+    container_name: crypto-ai-bot-node
+    restart: unless-stopped
+    networks:
+      - crypto-net
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: cryptobot
+      DB_PASSWORD: dev_change_me
+      DB_NAME: cryptobot_ai
+      INFERENCE_GRPC_URL: ai-inference:50051
+      HTTP_PORT: "3000"
+      NODE_ENV: development
+      JWT_SECRET: dev_jwt_secret_not_for_production_0000000000000000
+      MASTER_ENCRYPTION_KEY: dev_master_key_not_for_production_00000000000000
+      INIT_ADMIN_USERNAME: admin
+      INIT_ADMIN_PASSWORD: admin1234
+      INIT_ADMIN_EMAIL: admin@localhost
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ai-inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>{if(!r.ok)throw 1})"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  web-vue:
+    build:
+      context: ../../crypto-web-vue
+      dockerfile: Dockerfile
+    container_name: crypto-ai-web-vue
+    restart: unless-stopped
+    networks:
+      - crypto-net
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - bot-node

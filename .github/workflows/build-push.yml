@@ -1,0 +1,86 @@
+# Reusable workflow: build a Docker image and push to ECR.
+# Called by each app repo's release workflow.
+#
+# Usage from crypto-bot-node/.github/workflows/release.yml:
+#   jobs:
+#     build:
+#       uses: mate-kovacs89/crypto-infra/.github/workflows/build-push.yml@main
+#       with:
+#         ecr_repo: crypto-bot-node
+#         dockerfile: Dockerfile
+#       secrets: inherit
+
+name: Build & Push to ECR
+
+on:
+  workflow_call:
+    inputs:
+      ecr_repo:
+        required: true
+        type: string
+        description: 'ECR repository name (e.g., crypto-bot-node)'
+      dockerfile:
+        required: false
+        type: string
+        default: 'Dockerfile'
+      target:
+        required: false
+        type: string
+        default: ''
+        description: 'Docker build target (e.g., inference, training)'
+      tag_suffix:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag suffix (e.g., -inference, -training)'
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true  # crypto-shared submodule
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: ECR Login
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ecr.outputs.registry }}/${{ inputs.ecr_repo }}
+          tags: |
+            type=semver,pattern={{version}}${{ inputs.tag_suffix }}
+            type=semver,pattern={{major}}.{{minor}}${{ inputs.tag_suffix }}
+            type=raw,value=latest${{ inputs.tag_suffix }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          target: ${{ inputs.target || '' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

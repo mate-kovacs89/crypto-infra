@@ -1,0 +1,83 @@
+# Deploy to live EC2 — triggered by release or manual dispatch.
+#
+# Release publish → build Docker image(s) → push ECR → deploy with
+# blue-green + health check + auto-rollback.
+#
+# Manual rollback: Actions → "Deploy Live" → Run workflow → enter
+# the old tag (e.g., v1.4.0) → deploys that version from ECR
+# (no rebuild needed, image already there).
+#
+# IMPORTANT: this workflow needs these GitHub Secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   LIVE_SSH_KEY (PEM content of the EC2 key pair)
+
+name: Deploy Live
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (all / bot-node / ai-inference / web-vue)'
+        required: false
+        default: 'all'
+      tag:
+        description: 'Image tag to deploy (e.g., v2.1.0). Leave empty for latest.'
+        required: false
+        default: ''
+      repo:
+        description: 'Source repo (auto-detected on release, manual for dispatch)'
+        required: false
+        default: ''
+
+  repository_dispatch:
+    types: [deploy-live]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval in GitHub settings
+
+    env:
+      AWS_REGION: eu-north-1
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-north-1.amazonaws.com
+
+    steps:
+      - name: Checkout crypto-infra
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: ECR Login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIVE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ vars.LIVE_HOST_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy
+        env:
+          LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
+          SSH_KEY: ~/.ssh/deploy_key
+        run: |
+          ARGS=""
+          if [ "${{ inputs.service }}" != "all" ] && [ -n "${{ inputs.service }}" ]; then
+            ARGS="$ARGS --service ${{ inputs.service }}"
+          fi
+          if [ -n "${{ inputs.tag }}" ]; then
+            ARGS="$ARGS --tag ${{ inputs.tag }}"
+          fi
+          ./scripts/deploy-live.sh $ARGS
+
+      - name: Verify compatibility
+        run: |
+          echo "Checking compatibility.json..."
+          cat docker/compatibility.json
+          echo "TODO: validate deployed versions match compatibility rules"
