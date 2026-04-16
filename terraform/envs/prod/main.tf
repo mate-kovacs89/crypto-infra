@@ -25,18 +25,29 @@ module "security" {
   vpc_id = module.networking.vpc_id
 }
 
+# ── IAM (instance profiles for EC2) ───────────────────────
+
+module "iam" {
+  source = "../../modules/iam"
+
+  models_bucket_arn = module.storage.models_bucket_arn
+  region            = var.region
+}
+
 # ── Compute (NEW ARM Graviton instances) ──────────────────
 
 module "compute" {
   source = "../../modules/compute"
 
-  training_instance_type = var.training_instance_type
-  live_instance_type     = var.live_instance_type
-  key_name               = var.key_name
-  public_subnet_ids      = module.networking.public_subnet_ids
-  training_sg_id         = module.security.training_sg_id
-  live_sg_id             = module.security.live_sg_id
-  region                 = var.region
+  training_instance_type       = var.training_instance_type
+  live_instance_type           = var.live_instance_type
+  key_name                     = var.key_name
+  public_subnet_ids            = module.networking.public_subnet_ids
+  training_sg_id               = module.security.training_sg_id
+  live_sg_id                   = module.security.live_sg_id
+  region                       = var.region
+  training_instance_profile    = module.iam.training_instance_profile_name
+  live_instance_profile        = module.iam.live_instance_profile_name
 }
 
 # ── Training Scheduler (bi-weekly auto-start) ────────────

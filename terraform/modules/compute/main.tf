@@ -32,6 +32,7 @@ resource "aws_instance" "training" {
   key_name               = var.key_name
   subnet_id              = var.public_subnet_ids[1] # eu-north-1b
   vpc_security_group_ids = [var.training_sg_id]
+  iam_instance_profile   = var.training_instance_profile
 
   root_block_device {
     volume_size           = 100 # GB — models + training data + Docker images
@@ -61,6 +62,7 @@ resource "aws_instance" "live" {
   key_name               = var.key_name
   subnet_id              = var.public_subnet_ids[0] # eu-north-1a
   vpc_security_group_ids = [var.live_sg_id]
+  iam_instance_profile   = var.live_instance_profile
 
   root_block_device {
     volume_size           = 30 # GB — Docker images + logs

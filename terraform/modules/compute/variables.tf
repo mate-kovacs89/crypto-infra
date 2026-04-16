@@ -28,3 +28,13 @@ variable "region" {
   type    = string
   default = "eu-north-1"
 }
+
+variable "training_instance_profile" {
+  type    = string
+  default = ""
+}
+
+variable "live_instance_profile" {
+  type    = string
+  default = ""
+}
