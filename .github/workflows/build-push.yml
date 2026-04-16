@@ -64,8 +64,7 @@ jobs:
         with:
           images: ${{ steps.ecr.outputs.registry }}/${{ inputs.ecr_repo }}
           tags: |
-            type=semver,pattern={{version}}${{ inputs.tag_suffix }}
-            type=semver,pattern={{major}}.{{minor}}${{ inputs.tag_suffix }}
+            type=raw,value=${{ github.ref_name }}${{ inputs.tag_suffix }}
 
       - name: Set up QEMU (ARM64 cross-build)
         uses: docker/setup-qemu-action@v3
