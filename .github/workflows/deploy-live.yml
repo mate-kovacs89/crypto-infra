@@ -67,6 +67,31 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-north-1
 
+      - name: List available tags in ECR
+        run: |
+          SERVICE="${{ inputs.service }}"
+          echo "### Available tags in ECR:" >> $GITHUB_STEP_SUMMARY
+
+          list_tags() {
+            local repo="$1"
+            local tags
+            tags=$(aws ecr describe-images --repository-name "$repo" --region eu-north-1 \
+              --query 'sort_by(imageDetails,&imagePushedAt)[*].imageTags[0]' --output text 2>/dev/null | tr '\t' '\n' | grep '^v' | sort -Vr | head -10)
+            echo "**$repo**: $tags" >> $GITHUB_STEP_SUMMARY
+            echo "$repo: $tags"
+          }
+
+          case "$SERVICE" in
+            bot-node)     list_tags "crypto-bot-node" ;;
+            ai-inference) list_tags "crypto-ai-python" ;;
+            web-vue)      list_tags "crypto-web-vue" ;;
+            all)
+              list_tags "crypto-bot-node"
+              list_tags "crypto-ai-python"
+              list_tags "crypto-web-vue"
+              ;;
+          esac
+
       - name: Verify image exists in ECR
         run: |
           SERVICE="${{ inputs.service }}"
