@@ -1,0 +1,16 @@
+{
+  "production": {
+    "bot-node": "v0.1.0-iter4-baseline",
+    "ai-python-inference": "v0.1.0-iter4-baseline",
+    "ai-python-training": "v0.1.0-iter4-baseline",
+    "web-vue": "v0.1.0",
+    "shared-proto": "v1",
+    "updated_at": "2026-04-16",
+    "notes": "Initial baseline — update versions as releases are cut"
+  },
+  "compatibility_rules": {
+    "shared-proto": "All services MUST match the same proto major version",
+    "ai-python": "inference and training MUST be from the same repo release tag",
+    "independent": ["bot-node internal changes", "web-vue internal changes"]
+  }
+}

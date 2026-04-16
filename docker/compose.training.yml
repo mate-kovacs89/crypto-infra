@@ -1,0 +1,23 @@
+# Training EC2 Docker stack (c7g.4xlarge ARM).
+# Single service: training pipeline.
+# Runs on EventBridge schedule (every 14 days), self-stops after.
+
+services:
+  training:
+    image: ${ECR_URL}/crypto-ai-python:${AI_PYTHON_TAG:-latest}-training
+    container_name: crypto-training
+    env_file: .env
+    volumes:
+      - models:/app/models
+    environment:
+      - TRAINING_OPTUNA_TRIALS=${OPTUNA_TRIALS:-300}
+      - TRAINING_HOLDOUT_DAYS=${HOLDOUT_DAYS:-30}
+    command: >
+      uv run python -m training.train
+        --trials ${OPTUNA_TRIALS:-300}
+        --holdout-days ${HOLDOUT_DAYS:-30}
+        --ensemble-seeds ${ENSEMBLE_SEEDS:-42,43,44,45,46}
+
+volumes:
+  models:
+    driver: local

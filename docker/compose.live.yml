@@ -1,0 +1,66 @@
+# Live EC2 Docker stack (t4g.medium ARM).
+# 3 services: bot-node + ai-inference + web-vue.
+# RDS MySQL is external (AWS managed, not in Docker).
+#
+# Deploy: scripts/deploy-live.sh handles blue-green swap +
+# health check + auto-rollback.
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+  bot-node:
+    <<: *common
+    image: ${ECR_URL}/crypto-bot-node:${BOT_NODE_TAG:-latest}
+    container_name: crypto-bot-node
+    ports:
+      - "${BOT_NODE_PORT:-3000}:3000"
+    env_file: .env
+    depends_on:
+      ai-inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>{if(!r.ok)throw 1})"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  ai-inference:
+    <<: *common
+    image: ${ECR_URL}/crypto-ai-python:${AI_PYTHON_TAG:-latest}-inference
+    container_name: crypto-ai-inference
+    ports:
+      - "${INFERENCE_PORT:-50051}:50051"
+    env_file: .env
+    volumes:
+      - models:/app/models
+    environment:
+      - MODEL_PATH=/app/models/model.lgbm
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc;ch=grpc.insecure_channel('localhost:50051');grpc.channel_ready_future(ch).result(timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  web-vue:
+    <<: *common
+    image: ${ECR_URL}/crypto-web-vue:${WEB_VUE_TAG:-latest}
+    container_name: crypto-web-vue
+    ports:
+      - "${WEB_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  models:
+    driver: local
