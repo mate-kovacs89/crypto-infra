@@ -49,6 +49,8 @@ jobs:
     steps:
       - name: Checkout crypto-infra
         uses: actions/checkout@v4
+        with:
+          repository: mate-kovacs89/crypto-infra
 
       - name: Validate tag format
         run: |
