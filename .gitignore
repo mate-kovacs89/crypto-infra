@@ -50,3 +50,4 @@ __pycache__/
 *.pyc
 .venv/
 audit/
+scripts/tf-import-existing.sh

@@ -13,7 +13,7 @@ set -euo pipefail
 #
 # Requires: SSH access to the live EC2, Docker + compose on remote.
 
-LIVE_HOST="${LIVE_HOST:-ubuntu@51.20.120.90}"
+LIVE_HOST="${LIVE_HOST:?Set LIVE_HOST (e.g. ubuntu@<ip>)}"
 COMPOSE_DIR="${COMPOSE_DIR:-/opt/crypto-bot}"
 COMPOSE_FILE="compose.live.yml"
 HEALTH_TIMEOUT=60
