@@ -3,22 +3,21 @@ set -euo pipefail
 
 # Blue-green deploy for the live EC2 stack.
 #
-# For each service: starts the new version, health-checks it, then
-# swaps. If the health check fails → automatic rollback to the
-# previous image. Zero-downtime for the trading bot.
+# Deploys a specific release tag (semver). Updates the tag env var
+# on the remote, pulls the image, recreates the service, and health-
+# checks it. On failure, rolls back to the previous tag.
 #
 # Usage:
-#   ./scripts/deploy-live.sh                      # deploy all with :latest
-#   ./scripts/deploy-live.sh --service bot-node    # deploy single service
-#   ./scripts/deploy-live.sh --tag v2.1.0          # deploy specific version
+#   ./scripts/deploy-live.sh --service bot-node --tag v1.2.0
+#   ./scripts/deploy-live.sh --service all --tag v1.2.0
 #
-# Requires: SSH access to the live EC2, Docker + compose installed.
+# Requires: SSH access to the live EC2, Docker + compose on remote.
 
 LIVE_HOST="${LIVE_HOST:-ubuntu@51.20.120.90}"
 COMPOSE_DIR="${COMPOSE_DIR:-/opt/crypto-bot}"
 COMPOSE_FILE="compose.live.yml"
-HEALTH_TIMEOUT=60  # seconds to wait for health check
-SSH_KEY="${SSH_KEY:-~/.ssh/sajat}"
+HEALTH_TIMEOUT=60
+SSH_KEY="${SSH_KEY:-~/.ssh/aws.pem}"
 
 SERVICE=""
 TAG=""
@@ -26,11 +25,16 @@ TAG=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --service) SERVICE="$2"; shift 2 ;;
-    --tag) TAG="$2"; shift 2 ;;
-    --host) LIVE_HOST="$2"; shift 2 ;;
+    --tag)     TAG="$2"; shift 2 ;;
+    --host)    LIVE_HOST="$2"; shift 2 ;;
     *) echo "Unknown: $1"; exit 1 ;;
   esac
 done
+
+if [ -z "$SERVICE" ] || [ -z "$TAG" ]; then
+  echo "Usage: deploy-live.sh --service <bot-node|ai-inference|web-vue|all> --tag <vX.Y.Z>"
+  exit 1
+fi
 
 ssh_cmd() {
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$LIVE_HOST" "$@"
@@ -40,65 +44,107 @@ log() {
   echo "[deploy] $(date +%H:%M:%S) $*"
 }
 
-# ── ECR login on remote ──────────────────────────────────
-log "ECR login on $LIVE_HOST"
-ssh_cmd "aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin \$(aws sts get-caller-identity --query Account --output text).dkr.ecr.eu-north-1.amazonaws.com"
+# Map service name → env var in .env, compose service name, container name
+service_env_var() {
+  case $1 in
+    bot-node)     echo "BOT_NODE_TAG" ;;
+    ai-inference) echo "AI_PYTHON_TAG" ;;
+    web-vue)      echo "WEB_VUE_TAG" ;;
+  esac
+}
 
-# ── Determine services to deploy ─────────────────────────
-if [ -n "$SERVICE" ]; then
-  SERVICES=("$SERVICE")
-else
-  SERVICES=("ai-inference" "bot-node" "web-vue")
-fi
+service_container() {
+  case $1 in
+    bot-node)     echo "crypto-bot-node" ;;
+    ai-inference) echo "crypto-ai-inference" ;;
+    web-vue)      echo "crypto-web-vue" ;;
+  esac
+}
 
-# ── Deploy each service (blue-green) ─────────────────────
-for svc in "${SERVICES[@]}"; do
-  log "=== Deploying $svc ==="
+# Read current tag from remote .env
+read_current_tag() {
+  local env_var
+  env_var=$(service_env_var "$1")
+  ssh_cmd "grep -oP '${env_var}=\K.*' $COMPOSE_DIR/.env 2>/dev/null || echo 'latest'"
+}
 
-  # Save current image for rollback
-  PREV_IMAGE=$(ssh_cmd "docker inspect --format='{{.Config.Image}}' crypto-${svc//-/_} 2>/dev/null || echo none")
-  log "  Previous: $PREV_IMAGE"
+# Update tag in remote .env (upsert)
+set_remote_tag() {
+  local env_var tag
+  env_var=$(service_env_var "$1")
+  tag="$2"
+  ssh_cmd "
+    if grep -q '^${env_var}=' $COMPOSE_DIR/.env 2>/dev/null; then
+      sed -i 's|^${env_var}=.*|${env_var}=${tag}|' $COMPOSE_DIR/.env
+    else
+      echo '${env_var}=${tag}' >> $COMPOSE_DIR/.env
+    fi
+  "
+}
 
-  # Pull new image
-  if [ -n "$TAG" ]; then
-    log "  Pulling tag: $TAG"
-    ssh_cmd "cd $COMPOSE_DIR && export TAG=$TAG && docker compose -f $COMPOSE_FILE pull $svc"
-  else
-    ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE pull $svc"
-  fi
+# Deploy a single service with health check + rollback
+deploy_service() {
+  local svc="$1"
+  local tag="$2"
+  local container
+  container=$(service_container "$svc")
 
-  # Start new container (compose recreates only changed services)
-  log "  Starting new container..."
-  ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE up -d $svc"
+  log "=== Deploying $svc → $tag ==="
 
-  # Health check
+  # 1. Save current tag for rollback
+  local prev_tag
+  prev_tag=$(read_current_tag "$svc")
+  log "  Previous tag: $prev_tag"
+
+  # 2. Update tag in .env
+  set_remote_tag "$svc" "$tag"
+  log "  Updated .env: $(service_env_var "$svc")=$tag"
+
+  # 3. Pull new image
+  log "  Pulling image..."
+  ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE pull $svc"
+
+  # 4. Recreate service
+  log "  Recreating container..."
+  ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE up -d --force-recreate $svc"
+
+  # 5. Health check
   log "  Health check (${HEALTH_TIMEOUT}s timeout)..."
-  HEALTHY=false
-  for i in $(seq 1 $HEALTH_TIMEOUT); do
-    STATUS=$(ssh_cmd "docker inspect --format='{{.State.Health.Status}}' crypto-${svc//-/_} 2>/dev/null || echo starting")
-    if [ "$STATUS" = "healthy" ]; then
-      HEALTHY=true
+  local healthy=false
+  for _ in $(seq 1 $HEALTH_TIMEOUT); do
+    local status
+    status=$(ssh_cmd "docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo starting")
+    if [ "$status" = "healthy" ]; then
+      healthy=true
       break
     fi
     sleep 1
   done
 
-  if $HEALTHY; then
-    log "  ✅ $svc healthy!"
+  if $healthy; then
+    log "  $svc $tag — healthy"
   else
-    log "  ❌ $svc UNHEALTHY — rolling back to $PREV_IMAGE"
-    if [ "$PREV_IMAGE" != "none" ]; then
-      ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE stop $svc"
-      ssh_cmd "docker tag $PREV_IMAGE \$(docker inspect --format='{{.Config.Image}}' crypto-${svc//-/_} | sed 's/:.*/:rollback/')"
-      ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE up -d $svc"
-      log "  Rolled back $svc to previous version"
-    fi
+    log "  $svc $tag — UNHEALTHY, rolling back to $prev_tag"
+    set_remote_tag "$svc" "$prev_tag"
+    ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE pull $svc && docker compose -f $COMPOSE_FILE up -d --force-recreate $svc"
+    log "  Rolled back $svc to $prev_tag"
     exit 1
   fi
-done
+}
+
+# ── ECR login on remote ──────────────────────────────────
+log "ECR login on $LIVE_HOST"
+ssh_cmd "aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin \$(aws sts get-caller-identity --query Account --output text).dkr.ecr.eu-north-1.amazonaws.com"
+
+# ── Deploy ────────────────────────────────────────────────
+if [ "$SERVICE" = "all" ]; then
+  # Order matters: inference first (bot depends on it), then bot, then web
+  deploy_service "ai-inference" "$TAG"
+  deploy_service "bot-node" "$TAG"
+  deploy_service "web-vue" "$TAG"
+else
+  deploy_service "$SERVICE" "$TAG"
+fi
 
 log "=== Deploy complete ==="
-
-# ── Verify all services ──────────────────────────────────
-log "Final status:"
-ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE ps"
+ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}'"

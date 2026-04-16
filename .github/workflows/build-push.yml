@@ -1,14 +1,7 @@
 # Reusable workflow: build a Docker image and push to ECR.
-# Called by each app repo's release workflow.
 #
-# Usage from crypto-bot-node/.github/workflows/release.yml:
-#   jobs:
-#     build:
-#       uses: mate-kovacs89/crypto-infra/.github/workflows/build-push.yml@main
-#       with:
-#         ecr_repo: crypto-bot-node
-#         dockerfile: Dockerfile
-#       secrets: inherit
+# Called by each app repo's release.yml on GitHub Release publish.
+# Tags the image with the semver release tag (e.g., v1.2.0).
 
 name: Build & Push to ECR
 
@@ -46,7 +39,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: true  # crypto-shared submodule
+          submodules: true
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,7 +60,6 @@ jobs:
           tags: |
             type=semver,pattern={{version}}${{ inputs.tag_suffix }}
             type=semver,pattern={{major}}.{{minor}}${{ inputs.tag_suffix }}
-            type=raw,value=latest${{ inputs.tag_suffix }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

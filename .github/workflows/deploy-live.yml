@@ -1,49 +1,62 @@
-# Deploy to live EC2 — triggered by release or manual dispatch.
+# Deploy to live EC2 — triggered by app repo release or manual dispatch.
 #
-# Release publish → build Docker image(s) → push ECR → deploy with
-# blue-green + health check + auto-rollback.
+# Automated: app repo release.yml calls this after ECR push.
+# Manual/rollback: Actions → "Deploy Live" → Run workflow → pick
+#   service + enter any previous release tag.
 #
-# Manual rollback: Actions → "Deploy Live" → Run workflow → enter
-# the old tag (e.g., v1.4.0) → deploys that version from ECR
-# (no rebuild needed, image already there).
+# Only semver release tags are accepted — no :latest in production.
 #
-# IMPORTANT: this workflow needs these GitHub Secrets:
-#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-#   LIVE_SSH_KEY (PEM content of the EC2 key pair)
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, LIVE_SSH_KEY
+# Required GitHub Variables:
+#   LIVE_HOST_IP
 
 name: Deploy Live
 
 on:
+  workflow_call:
+    inputs:
+      service:
+        type: string
+        required: true
+        description: 'Service to deploy (bot-node / ai-inference / web-vue)'
+      tag:
+        type: string
+        required: true
+        description: 'Release tag to deploy (e.g., v1.2.0)'
+
   workflow_dispatch:
     inputs:
       service:
-        description: 'Service to deploy (all / bot-node / ai-inference / web-vue)'
-        required: false
-        default: 'all'
+        type: choice
+        description: 'Service to deploy'
+        required: true
+        options:
+          - bot-node
+          - ai-inference
+          - web-vue
+          - all
       tag:
-        description: 'Image tag to deploy (e.g., v2.1.0). Leave empty for latest.'
-        required: false
-        default: ''
-      repo:
-        description: 'Source repo (auto-detected on release, manual for dispatch)'
-        required: false
-        default: ''
-
-  repository_dispatch:
-    types: [deploy-live]
+        type: string
+        description: 'Release tag to deploy (e.g., v1.2.0). Must exist in ECR.'
+        required: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production  # Requires manual approval in GitHub settings
-
-    env:
-      AWS_REGION: eu-north-1
-      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-north-1.amazonaws.com
+    environment: production
 
     steps:
       - name: Checkout crypto-infra
         uses: actions/checkout@v4
+
+      - name: Validate tag format
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Tag must be semver (e.g., v1.2.0). Got: $TAG"
+            exit 1
+          fi
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -52,8 +65,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-north-1
 
-      - name: ECR Login
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Verify image exists in ECR
+        run: |
+          SERVICE="${{ inputs.service }}"
+          TAG="${{ inputs.tag }}"
+
+          verify_image() {
+            local repo="$1"
+            local full_tag="$2"
+            echo "Checking $repo:$full_tag in ECR..."
+            if ! aws ecr describe-images --repository-name "$repo" --image-ids imageTag="$full_tag" --region eu-north-1 > /dev/null 2>&1; then
+              echo "::error::Image $repo:$full_tag not found in ECR. Build a release first."
+              exit 1
+            fi
+            echo "✓ $repo:$full_tag exists"
+          }
+
+          case "$SERVICE" in
+            bot-node)     verify_image "crypto-bot-node" "$TAG" ;;
+            ai-inference) verify_image "crypto-ai-python" "${TAG}-inference" ;;
+            web-vue)      verify_image "crypto-web-vue" "$TAG" ;;
+            all)
+              verify_image "crypto-bot-node" "$TAG"
+              verify_image "crypto-ai-python" "${TAG}-inference"
+              verify_image "crypto-web-vue" "$TAG"
+              ;;
+          esac
 
       - name: Setup SSH
         run: |
@@ -67,17 +104,5 @@ jobs:
           LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
           SSH_KEY: ~/.ssh/deploy_key
         run: |
-          ARGS=""
-          if [ "${{ inputs.service }}" != "all" ] && [ -n "${{ inputs.service }}" ]; then
-            ARGS="$ARGS --service ${{ inputs.service }}"
-          fi
-          if [ -n "${{ inputs.tag }}" ]; then
-            ARGS="$ARGS --tag ${{ inputs.tag }}"
-          fi
-          ./scripts/deploy-live.sh $ARGS
-
-      - name: Verify compatibility
-        run: |
-          echo "Checking compatibility.json..."
-          cat docker/compatibility.json
-          echo "TODO: validate deployed versions match compatibility rules"
+          chmod +x scripts/deploy-live.sh
+          scripts/deploy-live.sh --service "${{ inputs.service }}" --tag "${{ inputs.tag }}"
