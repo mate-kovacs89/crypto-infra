@@ -95,20 +95,37 @@ if ! $PULL_ONLY; then
   uv sync --frozen 2>&1 | tail -2
   uv pip install cryptography 2>&1 | tail -1
 
-  log "Building shared TS package..."
+  log "Building shared TS package (build deps dropped after compile)..."
   cd "$WORK_DIR/crypto-shared/ts"
   npm ci 2>&1 | tail -1
   npm run build 2>&1 | tail -1
+
+  # Match the production Dockerfile layout: bot-node must resolve
+  # @grpc/grpc-js (and any other runtime dep) from its own node_modules.
+  # Leaving crypto-shared/ts/node_modules around creates a second grpc-js
+  # copy, and because Node walks up from the real path of the symlinked
+  # @cryptobot/shared package, ts-proto stubs bind to the shared's copy
+  # while InferenceGrpcClient binds to bot-node's. The Client constructor
+  # then throws "Channel credentials must be a ChannelCredentials object"
+  # on cross-instance instanceof checks.
+  log "Dropping proto/ts/node_modules to force single @grpc/grpc-js resolution..."
+  rm -rf "$WORK_DIR/crypto-shared/ts/node_modules"
 
   log "Installing Node.js deps..."
   cd "$WORK_DIR/crypto-bot-node"
   npm ci 2>&1 | tail -1
   npm run build 2>&1 | tail -1
 else
-  # Even on pull-only, rebuild shared TS (schema might have changed)
+  # Pull-only: rebuild shared TS (schema may have changed). Re-install
+  # build deps only when missing, then drop them again so the runtime
+  # resolves @grpc/grpc-js from bot-node's node_modules (see comment above).
   log "Rebuilding shared TS..."
   cd "$WORK_DIR/crypto-shared/ts"
+  if [[ ! -d node_modules ]]; then
+    npm ci 2>&1 | tail -1
+  fi
   npm run build 2>&1 | tail -1
+  rm -rf "$WORK_DIR/crypto-shared/ts/node_modules"
 fi
 
 # ── 5. DB credentials (.env) ─────────────────────────────
