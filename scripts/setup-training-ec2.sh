@@ -78,15 +78,24 @@ clone_or_pull crypto-ai-python
 clone_or_pull crypto-bot-node
 clone_or_pull crypto-shared
 
-# ── 3. Symlinks (submodule replacement) ──────────────────
-log "Setting up symlinks..."
+# ── 3. Submodule placement ───────────────────────────────
+# Python: symlink is fine — Python import resolution doesn't walk up
+# ancestor node_modules directories, so a sibling symlink works.
+log "Setting up Python crypto-shared symlink..."
 cd "$WORK_DIR/crypto-ai-python"
 rm -rf crypto-shared 2>/dev/null || true
 ln -sfn ../crypto-shared crypto-shared
 
+# Node: copy (not symlink). Node ESM resolution follows the real path
+# when walking up to find node_modules. A symlinked proto/ → crypto-shared/
+# means the shared's dist imports (zod, @grpc/grpc-js) walk up from
+# /home/ubuntu/crypto-shared/ts/... which is OUTSIDE the bot-node tree,
+# never hitting bot-node/node_modules. This mirrors the production
+# Dockerfile which does `COPY proto/ proto/` into /app/proto/.
+log "Copying crypto-shared into bot-node/proto (mirrors Dockerfile layout)..."
 cd "$WORK_DIR/crypto-bot-node"
 rm -rf proto 2>/dev/null || true
-ln -sfn ../crypto-shared proto
+cp -r "$WORK_DIR/crypto-shared" proto
 
 # ── 4. Install dependencies ──────────────────────────────
 if ! $PULL_ONLY; then
@@ -95,37 +104,32 @@ if ! $PULL_ONLY; then
   uv sync --frozen 2>&1 | tail -2
   uv pip install cryptography 2>&1 | tail -1
 
-  log "Building shared TS package (build deps dropped after compile)..."
-  cd "$WORK_DIR/crypto-shared/ts"
+  log "Building shared TS package inside bot-node/proto..."
+  cd "$WORK_DIR/crypto-bot-node/proto/ts"
   npm ci 2>&1 | tail -1
   npm run build 2>&1 | tail -1
 
-  # Match the production Dockerfile layout: bot-node must resolve
-  # @grpc/grpc-js (and any other runtime dep) from its own node_modules.
-  # Leaving crypto-shared/ts/node_modules around creates a second grpc-js
-  # copy, and because Node walks up from the real path of the symlinked
-  # @cryptobot/shared package, ts-proto stubs bind to the shared's copy
-  # while InferenceGrpcClient binds to bot-node's. The Client constructor
-  # then throws "Channel credentials must be a ChannelCredentials object"
-  # on cross-instance instanceof checks.
-  log "Dropping proto/ts/node_modules to force single @grpc/grpc-js resolution..."
-  rm -rf "$WORK_DIR/crypto-shared/ts/node_modules"
+  # Drop build deps so runtime resolves everything (zod, @grpc/grpc-js,
+  # @bufbuild/protobuf) from bot-node's own node_modules — avoids a
+  # duplicated @grpc/grpc-js instance that would throw
+  # "Channel credentials must be a ChannelCredentials object" at runtime.
+  log "Dropping proto/ts/node_modules to force single-instance resolution..."
+  rm -rf "$WORK_DIR/crypto-bot-node/proto/ts/node_modules"
 
   log "Installing Node.js deps..."
   cd "$WORK_DIR/crypto-bot-node"
   npm ci 2>&1 | tail -1
   npm run build 2>&1 | tail -1
 else
-  # Pull-only: rebuild shared TS (schema may have changed). Re-install
-  # build deps only when missing, then drop them again so the runtime
-  # resolves @grpc/grpc-js from bot-node's node_modules (see comment above).
-  log "Rebuilding shared TS..."
-  cd "$WORK_DIR/crypto-shared/ts"
+  # Pull-only: rebuild shared TS inside the already-copied proto/ tree.
+  # Re-install build deps only when missing, then drop them again.
+  log "Rebuilding shared TS inside bot-node/proto..."
+  cd "$WORK_DIR/crypto-bot-node/proto/ts"
   if [[ ! -d node_modules ]]; then
     npm ci 2>&1 | tail -1
   fi
   npm run build 2>&1 | tail -1
-  rm -rf "$WORK_DIR/crypto-shared/ts/node_modules"
+  rm -rf "$WORK_DIR/crypto-bot-node/proto/ts/node_modules"
 fi
 
 # ── 5. DB credentials (.env) ─────────────────────────────
