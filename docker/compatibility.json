@@ -1,16 +1,19 @@
 {
   "production": {
-    "bot-node": "v0.1.0-iter4-baseline",
-    "ai-python-inference": "v0.1.0-iter4-baseline",
-    "ai-python-training": "v0.1.0-iter4-baseline",
-    "web-vue": "v0.1.0",
+    "bot-node": "v2.0.0",
+    "ai-python-inference": "v2.0.0",
+    "ai-python-training": "v2.0.0",
+    "web-vue": "v1.2.8",
     "shared-proto": "v1",
-    "updated_at": "2026-04-16",
-    "notes": "Initial baseline — update versions as releases are cut"
+    "policy-bundle": "v8-main@20260422T072208Z",
+    "updated_at": "2026-04-22",
+    "notes": "v2.0.0 coordinated major release — ai-python PolicyBundle + 36-feature v3-v8 event pipeline, bot-node 800 1h candle payload + 5-step exit cascade + fix 4h cool-down. Policy bundle deployed separately via deploy-model.yml."
   },
   "compatibility_rules": {
     "shared-proto": "All services MUST match the same proto major version",
     "ai-python": "inference and training MUST be from the same repo release tag",
-    "independent": ["bot-node internal changes", "web-vue internal changes"]
+    "policy-bundle": "PolicyBundle version is orthogonal to image versions — the active bundle is pinned at s3://crypto-bot-models-eu-north-1/policies/<name>/current and hot-swapped via deploy-model.yml",
+    "v2.x-lockstep": "bot-node v2.x and ai-python v2.x MUST deploy together — the candle payload size and the policy contract change in lock-step, a v1.x ai-inference will not understand a v2.x bot-node payload",
+    "independent": ["web-vue internal changes"]
   }
 }
