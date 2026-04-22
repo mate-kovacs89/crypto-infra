@@ -39,8 +39,19 @@ services:
       - "${INFERENCE_PORT:-50051}:50051"
     env_file: .env
     volumes:
+      # Named volume keeps the legacy single model file so the existing
+      # MODEL_PATH fallback continues to work until a policy bundle is
+      # synced.
       - models:/app/models
+      # Host-managed bundle directory — deploy-model.sh syncs S3
+      # artifacts into /srv/models/active on the host. :ro because the
+      # bundle is an immutable release artifact.
+      - /srv/models/active:/app/policies/active:ro
     environment:
+      # POLICY_DIR triggers the ensemble path (bundle.json + shadow.json
+      # + seed_N.lgbm + calibrator_*.pkl). server.py falls back to
+      # MODEL_PATH automatically if /app/policies/active is empty.
+      - POLICY_DIR=/app/policies/active
       - MODEL_PATH=/app/models/model.lgbm
     healthcheck:
       test: ["CMD", "python", "-c", "import grpc;ch=grpc.insecure_channel('localhost:50051');grpc.channel_ready_future(ch).result(timeout=3)"]

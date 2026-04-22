@@ -1,0 +1,129 @@
+# Deploy a PolicyBundle (model artifacts) to live EC2 — manual trigger.
+#
+# Orthogonal to deploy-live.yml (which ships container images): this
+# workflow ships model files from S3 to /srv/models/active/ on the live
+# EC2, restarts ai-inference, health-checks, and auto-rolls back on
+# failure. Model deploys happen on a different cadence than code deploys,
+# which is why this is a separate, manually-triggered workflow.
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, LIVE_SSH_KEY
+# Required GitHub Variables:
+#   LIVE_HOST_IP
+
+name: Deploy Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        type: string
+        description: 'Policy name (matches the S3 prefix under policies/)'
+        required: true
+        default: 'v8-main'
+      version:
+        type: string
+        description: 'Version stamp (e.g. 20260422T134500Z) or "latest" to resolve the current pointer'
+        required: true
+        default: 'latest'
+      rollback:
+        type: boolean
+        description: 'Roll back to the previous bundle on /srv/models/previous (ignores version)'
+        required: false
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout crypto-infra
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: Show target version
+        if: ${{ !inputs.rollback }}
+        run: |
+          NAME="${{ inputs.name }}"
+          VERSION="${{ inputs.version }}"
+          echo "### Target" >> $GITHUB_STEP_SUMMARY
+          echo "- policy: **$NAME**" >> $GITHUB_STEP_SUMMARY
+          echo "- version input: **$VERSION**" >> $GITHUB_STEP_SUMMARY
+          if [ "$VERSION" = "latest" ]; then
+            RESOLVED=$(aws s3 cp "s3://crypto-bot-models-eu-north-1/policies/$NAME/current" - 2>/dev/null | tr -d '[:space:]' || echo "")
+            if [ -z "$RESOLVED" ]; then
+              echo "::error::No 'current' pointer at s3://crypto-bot-models-eu-north-1/policies/$NAME/current"
+              exit 1
+            fi
+            echo "- resolved: **$RESOLVED**" >> $GITHUB_STEP_SUMMARY
+            VERSION="$RESOLVED"
+          fi
+          if ! aws s3 ls "s3://crypto-bot-models-eu-north-1/policies/$NAME/$VERSION/bundle.json" > /dev/null 2>&1; then
+            echo "::error::bundle.json not found at s3://crypto-bot-models-eu-north-1/policies/$NAME/$VERSION/"
+            exit 1
+          fi
+          echo "- bundle.json: ✓ exists in S3" >> $GITHUB_STEP_SUMMARY
+
+      - name: List rollback target
+        if: ${{ inputs.rollback }}
+        env:
+          LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIVE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ vars.LIVE_HOST_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          PREV=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LIVE_HOST" \
+            "cat /srv/models/previous/bundle.json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"name\"]+\" v\"+d[\"version\"])' 2>/dev/null || echo 'no-previous'")
+          echo "### Rollback target" >> $GITHUB_STEP_SUMMARY
+          echo "- /srv/models/previous: **$PREV**" >> $GITHUB_STEP_SUMMARY
+          if [ "$PREV" = "no-previous" ]; then
+            echo "::error::Nothing to roll back to — /srv/models/previous is empty"
+            exit 1
+          fi
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIVE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ vars.LIVE_HOST_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy forward
+        if: ${{ !inputs.rollback }}
+        env:
+          LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
+          SSH_KEY: ~/.ssh/deploy_key
+        run: |
+          chmod +x scripts/deploy-model.sh
+          scripts/deploy-model.sh --name "${{ inputs.name }}" --version "${{ inputs.version }}"
+
+      - name: Rollback
+        if: ${{ inputs.rollback }}
+        env:
+          LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
+          SSH_KEY: ~/.ssh/deploy_key
+        run: |
+          chmod +x scripts/deploy-model.sh
+          scripts/deploy-model.sh --name "${{ inputs.name }}" --rollback
+
+      - name: Post-deploy status
+        if: always()
+        env:
+          LIVE_HOST: ubuntu@${{ vars.LIVE_HOST_IP }}
+          SSH_KEY: ~/.ssh/deploy_key
+        run: |
+          echo "### Final state" >> $GITHUB_STEP_SUMMARY
+          STATUS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$LIVE_HOST" \
+            "docker inspect --format='{{.State.Health.Status}}' crypto-ai-inference 2>/dev/null || echo unknown")
+          echo "- ai-inference health: **$STATUS**" >> $GITHUB_STEP_SUMMARY
+          ACTIVE=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$LIVE_HOST" \
+            "cat /srv/models/active/bundle.json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"name\"]+\" v\"+d[\"version\"])' 2>/dev/null || echo 'none'")
+          echo "- active bundle: **$ACTIVE**" >> $GITHUB_STEP_SUMMARY
