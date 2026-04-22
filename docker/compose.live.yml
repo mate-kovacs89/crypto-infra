@@ -54,7 +54,9 @@ services:
       - POLICY_DIR=/app/policies/active
       - MODEL_PATH=/app/models/model.lgbm
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc;ch=grpc.insecure_channel('localhost:50051');grpc.channel_ready_future(ch).result(timeout=3)"]
+      # The image runs via `uv run` — the system `python` has none of
+      # the project deps. CMD-SHELL so we can use the venv-aware launcher.
+      test: ["CMD-SHELL", "uv run python -c 'import grpc; ch=grpc.insecure_channel(\"localhost:50051\"); grpc.channel_ready_future(ch).result(timeout=3)'"]
       interval: 30s
       timeout: 5s
       start_period: 20s
