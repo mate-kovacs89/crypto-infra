@@ -40,8 +40,29 @@ ssh_cmd() {
   ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$LIVE_HOST" "$@"
 }
 
+scp_cmd() {
+  scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "$@"
+}
+
 log() {
   echo "[deploy] $(date +%H:%M:%S) $*"
+}
+
+# Sync the authoritative compose.live.yml from this repo to the live
+# EC2 before every deploy. Without this, changes to volumes / env vars /
+# service definitions in the repo would never reach production — the
+# image swap alone does not re-apply compose-level configuration. The
+# repo is the single source of truth; the host copy in $COMPOSE_DIR is
+# a disposable cache.
+sync_compose_file() {
+  local src_compose
+  src_compose="$(dirname "$0")/../docker/$COMPOSE_FILE"
+  if [ ! -f "$src_compose" ]; then
+    log "  WARNING: $src_compose not found in repo — skipping compose sync"
+    return 0
+  fi
+  log "  Syncing $COMPOSE_FILE: repo → $LIVE_HOST:$COMPOSE_DIR/"
+  scp_cmd "$src_compose" "$LIVE_HOST:$COMPOSE_DIR/$COMPOSE_FILE"
 }
 
 # Map service name → env var in .env, compose service name, container name
@@ -99,6 +120,9 @@ deploy_service() {
   # 2. Update tag in .env
   set_remote_tag "$svc" "$tag"
   log "  Updated .env: $(service_env_var "$svc")=$tag"
+
+  # 2.5. Sync compose file from repo (single source of truth)
+  sync_compose_file
 
   # 3. Pull new image
   log "  Pulling image..."
