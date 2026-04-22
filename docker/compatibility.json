@@ -1,13 +1,13 @@
 {
   "production": {
     "bot-node": "v2.0.0",
-    "ai-python-inference": "v2.0.4",
-    "ai-python-training": "v2.0.4",
+    "ai-python-inference": "v2.0.5",
+    "ai-python-training": "v2.0.5",
     "web-vue": "v1.2.8",
     "shared-proto": "v1",
     "policy-bundle": "v8-main@20260422T072208Z",
     "updated_at": "2026-04-22",
-    "notes": "v2.0.4 ai-python patch chain: (v2.0.1) weekly training.yml + compare_challenger.py + prep-training-ec2 + 4w holdout gate, (v2.0.2) reuse LIVE_SSH_KEY + SUBMODULE_PAT existing secrets + extended training window (start-date shifts back so holdout is +4w not -4w), (v2.0.3) Health RPC HEALTHY+bundle.version in policy mode, (v2.0.4) AWS CLI v2 via official installer on training EC2 (Ubuntu 24.04 dropped awscli apt package). bot-node v2.0.0 runtime unchanged — inference contract stable across v2.0.x ai-python patches."
+    "notes": "v2.0.5 ai-python patch chain: (v2.0.1) weekly training.yml + compare_challenger.py + prep-training-ec2 + 4w holdout gate, (v2.0.2) reuse LIVE_SSH_KEY + SUBMODULE_PAT existing secrets + extended training window (start-date shifts back so holdout is +4w not -4w), (v2.0.3) Health RPC HEALTHY+bundle.version in policy mode, (v2.0.4) AWS CLI v2 via official installer on training EC2 (Ubuntu 24.04 dropped awscli apt package), (v2.0.5) force_promote workflow_dispatch input on training.yml for one-off bootstrap / emergency manual deploys where the held-out relative gate is misleading (e.g. challenger == champion bitwise). bot-node v2.0.0 runtime unchanged — inference contract stable across v2.0.x ai-python patches."
   },
   "compatibility_rules": {
     "shared-proto": "All services MUST match the same proto major version",
