@@ -36,7 +36,17 @@ log() {
 if ! $PULL_ONLY; then
   log "Installing system dependencies..."
   sudo apt-get update -qq
-  sudo apt-get install -y -qq libgomp1 > /dev/null
+  sudo apt-get install -y -qq libgomp1 awscli > /dev/null
+
+  # Docker (required by the release-based training flow — the weekly
+  # training.yml workflow runs the crypto-ai-python:latest-training
+  # image via `sudo docker run` on this host).
+  if ! command -v docker &>/dev/null; then
+    log "Installing docker.io..."
+    sudo apt-get install -y -qq docker.io > /dev/null
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker ubuntu
+  fi
 
   # uv (Python package manager)
   if ! command -v uv &>/dev/null; then
@@ -52,7 +62,7 @@ if ! $PULL_ONLY; then
     sudo apt-get install -y -qq nodejs > /dev/null
   fi
 
-  log "Versions: node=$(node --version) uv=$(uv --version) python=$(python3 --version)"
+  log "Versions: node=$(node --version) uv=$(uv --version) python=$(python3 --version) docker=$(docker --version) aws=$(aws --version 2>&1 | head -1)"
 fi
 
 source "$HOME/.local/bin/env" 2>/dev/null || true
