@@ -1,0 +1,37 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep last 10 v*-inference images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPatternList": ["v*-inference"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {"type": "expire"}
+    },
+    {
+      "rulePriority": 2,
+      "description": "Keep last 10 v*-training images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPatternList": ["v*-training"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {"type": "expire"}
+    },
+    {
+      "rulePriority": 3,
+      "description": "Delete untagged images older than 14 days",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 14
+      },
+      "action": {"type": "expire"}
+    }
+  ]
+}

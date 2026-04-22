@@ -1,0 +1,26 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep last 10 v* images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPatternList": ["v*"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {"type": "expire"}
+    },
+    {
+      "rulePriority": 2,
+      "description": "Delete untagged images older than 14 days",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 14
+      },
+      "action": {"type": "expire"}
+    }
+  ]
+}
