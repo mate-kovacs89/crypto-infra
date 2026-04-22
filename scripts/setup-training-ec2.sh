@@ -36,7 +36,23 @@ log() {
 if ! $PULL_ONLY; then
   log "Installing system dependencies..."
   sudo apt-get update -qq
-  sudo apt-get install -y -qq libgomp1 awscli > /dev/null
+  sudo apt-get install -y -qq libgomp1 unzip > /dev/null
+
+  # AWS CLI v2 (Ubuntu 24.04 dropped the `awscli` apt package — install
+  # via the official installer).
+  if ! command -v aws &>/dev/null; then
+    log "Installing AWS CLI v2..."
+    ARCH=$(uname -m)
+    case "$ARCH" in
+      aarch64) URL="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" ;;
+      x86_64)  URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" ;;
+      *) log "ERROR: unsupported arch $ARCH"; exit 1 ;;
+    esac
+    curl -fsSL "$URL" -o /tmp/awscliv2.zip
+    unzip -qq -o /tmp/awscliv2.zip -d /tmp
+    sudo /tmp/aws/install --update > /dev/null
+    rm -rf /tmp/awscliv2.zip /tmp/aws
+  fi
 
   # Docker (required by the release-based training flow — the weekly
   # training.yml workflow runs the crypto-ai-python:latest-training
