@@ -58,10 +58,10 @@ services:
       - crypto-net
     ports:
       - "127.0.0.1:50051:50051"
-    environment:
-      MODEL_PATH: /app/models/model.lgbm
-    volumes:
-      - ../../crypto-ai-python/models:/app/models
+    # Dev container runs in dummy mode: no POLICY_DIR is mounted, so
+    # the server returns random HOLD/BUY. To test against a real
+    # bundle locally, mount a bundle directory to /app/policies/active
+    # and set POLICY_DIR=/app/policies/active here.
     healthcheck:
       test: ["CMD", "python", "-c", "import grpc;ch=grpc.insecure_channel('localhost:50051');grpc.channel_ready_future(ch).result(timeout=3)"]
       interval: 30s

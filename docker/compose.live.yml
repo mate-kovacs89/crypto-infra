@@ -39,20 +39,16 @@ services:
       - "${INFERENCE_PORT:-50051}:50051"
     env_file: .env
     volumes:
-      # Named volume keeps the legacy single model file so the existing
-      # MODEL_PATH fallback continues to work until a policy bundle is
-      # synced.
-      - models:/app/models
-      # Host-managed bundle directory — deploy-model.sh syncs S3
+      # Host-managed bundle directory — deploy-model.sh syncs the S3
       # artifacts into /srv/models/active on the host. :ro because the
       # bundle is an immutable release artifact.
       - /srv/models/active:/app/policies/active:ro
     environment:
-      # POLICY_DIR triggers the ensemble path (bundle.json + shadow.json
-      # + seed_N.lgbm + calibrator_*.pkl). server.py falls back to
-      # MODEL_PATH automatically if /app/policies/active is empty.
+      # POLICY_DIR triggers the ensemble path (bundle.json +
+      # shadow.json + seed_N.lgbm + calibrator_*.pkl). When the dir is
+      # empty the server degrades to dummy mode; no single-model
+      # fallback path exists any more.
       - POLICY_DIR=/app/policies/active
-      - MODEL_PATH=/app/models/model.lgbm
     healthcheck:
       # The image runs via `uv run` — the system `python` has none of
       # the project deps. CMD-SHELL so we can use the venv-aware launcher.
@@ -73,7 +69,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-
-volumes:
-  models:
-    driver: local
