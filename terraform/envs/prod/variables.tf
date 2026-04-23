@@ -31,7 +31,7 @@ variable "private_subnet_ids" {
 
 variable "training_instance_type" {
   type    = string
-  default = "c7g.12xlarge"
+  default = "c7g.4xlarge"
 }
 
 variable "live_instance_type" {

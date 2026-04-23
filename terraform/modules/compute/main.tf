@@ -23,8 +23,11 @@ data "aws_ami" "arm_ubuntu" {
 }
 
 # ── Training EC2 ──────────────────────────────────────────
-# c7g.12xlarge: 48 vCPU Graviton3, 96 GB RAM.
-# Stopped by default — started on-demand for training runs.
+# c7g.4xlarge: 16 vCPU Graviton3, 32 GB RAM. Stopped by default;
+# started by the `training.yml` GH Actions workflow (weekly cron
+# `0 2 * * 0` — Sunday 02:00 UTC) via AWS CLI, and stopped at the
+# end of the same workflow. The original c7g.12xlarge (48 vCPU) was
+# over-provisioned for the actual 36-feature / 5-seed pipeline.
 
 resource "aws_instance" "training" {
   ami                    = data.aws_ami.arm_ubuntu.id

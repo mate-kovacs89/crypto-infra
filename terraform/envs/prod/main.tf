@@ -50,14 +50,23 @@ module "compute" {
   live_instance_profile        = module.iam.live_instance_profile_name
 }
 
-# ── Training Scheduler (bi-weekly auto-start) ────────────
-
-module "training_scheduler" {
-  source = "../../modules/training_scheduler"
-
-  training_instance_id = module.compute.training_instance_id
-  region               = var.region
-}
+# ── Training scheduling: GitHub Actions ──────────────────
+#
+# Training runs are scheduled and orchestrated entirely by
+# `.github/workflows/training.yml` in `crypto-ai-python` (weekly cron
+# `0 2 * * 0`). The workflow uses AWS CLI to start the training EC2,
+# runs the pipeline inside Docker on the instance, and stops the EC2
+# when done. No EventBridge rule, no Lambda, no Terraform-managed
+# scheduler — the former `training_scheduler` module was removed
+# (2026-04-23) after it turned out to be redundant: the EventBridge
+# rule never actually invoked the training because GH Actions always
+# started the EC2 first. Keeping both systems alive risked
+# double-starts and ambiguous ownership.
+#
+# If we ever want to move scheduling to AWS (e.g. to decouple from
+# GitHub uptime), the approach would be: EventBridge rule → Lambda →
+# EC2 start + SSM run-command for the Docker pipeline. That is NOT
+# the current plan.
 
 # ── Database (brownfield import) ──────────────────────────
 
