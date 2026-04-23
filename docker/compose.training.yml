@@ -1,6 +1,10 @@
 # Training EC2 Docker stack (c7g.4xlarge ARM).
 # Single service: training pipeline.
-# Runs on EventBridge schedule (every 14 days), self-stops after.
+# Orchestrated by crypto-ai-python/.github/workflows/training.yml
+# (weekly cron `0 2 * * 0`, Sunday 02:00 UTC + manual dispatch).
+# The GH workflow starts the EC2 via AWS CLI, SSHs in, runs
+# `docker compose up` against this file, and stops the EC2 when
+# the pipeline finishes. No AWS EventBridge / Lambda involvement.
 
 services:
   training:
