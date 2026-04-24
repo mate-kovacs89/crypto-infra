@@ -173,11 +173,8 @@ fi
 log "=== Deploy complete ==="
 ssh_cmd "cd $COMPOSE_DIR && docker compose -f $COMPOSE_FILE ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}'"
 
-# ── Post-deploy cleanup ──────────────────────────────────
-# The live EC2 root volume is 29 GB; each -inference image is ~2.3 GB.
-# Without pruning after each deploy, old tags accumulate and eventually
-# fill the disk (observed on v2.0.6: 99% usage, pull "no space left on
-# device"). Images still referenced by running containers are safe —
-# docker image prune only reclaims dangling / untagged layers.
-log "Pruning unused images"
-ssh_cmd "docker image prune -af --filter 'until=72h' 2>&1 | tail -3" || log "  (prune failed, non-fatal)"
+# Image cleanup is handled out-of-band by the cron-scheduled
+# live-image-rotation.sh (keep-last-3 per repo), so the deploy path
+# stays fast. The prior 72h-filter prune step was removed after it
+# failed to reclaim anything when release cadence dropped below 72h
+# per tag (v2.0.14 deploy hit ENOSPC with 9 inference tags on disk).

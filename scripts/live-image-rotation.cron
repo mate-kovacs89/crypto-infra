@@ -1,0 +1,16 @@
+# Keep-last-3 ECR image rotation on the live EC2.
+#
+# Install on the host with:
+#   sudo cp scripts/live-image-rotation.sh /usr/local/bin/
+#   sudo chmod 755 /usr/local/bin/live-image-rotation.sh
+#   sudo cp scripts/live-image-rotation.cron /etc/cron.d/live-image-rotation
+#   sudo chmod 644 /etc/cron.d/live-image-rotation
+#
+# Runs daily at 03:17 UTC (low-traffic window, offset from every-00
+# crons so docker does not fight other daily jobs). Logs append to
+# /var/log/live-image-rotation.log (root-owned, logrotate-friendly).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 3 * * * root /usr/local/bin/live-image-rotation.sh >> /var/log/live-image-rotation.log 2>&1
