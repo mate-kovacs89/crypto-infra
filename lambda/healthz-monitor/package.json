@@ -1,0 +1,20 @@
+{
+  "name": "@cryptobot/healthz-monitor",
+  "version": "0.1.0",
+  "description": "AWS Lambda — external /healthz pinger for the live bot-node container",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.mjs'",
+    "build": "./build.sh"
+  },
+  "_comment_devDeps": "AWS SDK v3 clients are bundled in the Lambda Node.js 20 runtime — build.sh does NOT zip node_modules. These devDeps exist ONLY so local `npm test` can resolve the imports at module load.",
+  "devDependencies": {
+    "@aws-sdk/client-ec2": "^3.700.0",
+    "@aws-sdk/client-ssm": "^3.700.0"
+  }
+}
