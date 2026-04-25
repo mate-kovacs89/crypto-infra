@@ -55,7 +55,7 @@ Terraform for Lambda yet):
    `logs:CreateLogGroup/CreateLogStream/PutLogEvents`, `ssm:GetParameter`
    on the param, `kms:Decrypt` on the SSM default key, and
    `ec2:DescribeInstances`.
-3. Lambda function `crypto-bot-health-monitor`, Node.js 20.x arm64,
+3. Lambda function `crypto-bot-health-monitor`, Node.js 22.x arm64,
    128 MB, 90 s timeout, handler `index.handler`, env vars set.
 4. EventBridge rule `crypto-bot-health-monitor-schedule` with
    `rate(2 minutes)`, target = the Lambda, invoke permission.

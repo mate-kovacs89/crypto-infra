@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a deployment zip for the healthz-monitor Lambda.
 #
-# Node.js 20 Lambda runtime bundles AWS SDK v3, so we do NOT package
+# Node.js 22 Lambda runtime bundles AWS SDK v3, so we do NOT package
 # node_modules — the zip contains only index.mjs + package.json (the
 # "type": "module" field is what the runtime actually needs).
 #
